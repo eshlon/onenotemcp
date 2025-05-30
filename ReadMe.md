@@ -191,31 +191,10 @@ Once connected and authenticated, you can ask your AI assistant to perform tasks
 
 This project was developed with inspiration and by adapting patterns from the following open-source projects:
 
-*   **[onenote-mcp](https://github.com/danosb/onenote-mcp) by danosb:** This project served as an early inspiration and provided reference for structuring a OneNote MCP server, particularly for initial concepts around authentication and basic OneNote operations. *(Note: This repository does not have an explicit license; any influence has been limited to general patterns and independently re-implemented logic).*
+*   **[onenote-mcp](https://github.com/danosb/onenote-mcp) by danosb:** This project served as an early inspiration and provided reference for structuring a OneNote MCP server, particularly for initial concepts around authentication and basic OneNote operations.
 
 
-*   **[azure-onenote-mcp-server](https://github.com/ZubeidHendricks/azure-onenote-mcp-server) by Zubeid Hendricks:** The core authentication flow using Device Code Credentials, token storage/retrieval strategy, and foundational patterns for wrapping Microsoft Graph API calls for OneNote (such as listing entities and creating pages) as MCP tools were significantly informed by or adapted from this project. This project is licensed under the MIT License. As per its terms, the following copyright and permission notice applies to the adapted portions:
-
-    > Copyright (c) 2023 Zubeid Hendricks
-    >
-    > Permission is hereby granted, free of charge, to any person obtaining a copy
-    > of this software and associated documentation files (the "Software"), to deal
-    > in the Software without restriction, including without limitation the rights
-    > to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    > copies of the Software, and to permit persons to whom the Software is
-    > furnished to do so, subject to the following conditions:
-    >
-    > The above copyright notice and this permission notice shall be included in all
-    > copies or substantial portions of the Software.
-    >
-    > THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    > IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    > FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    > AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    > LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    > SOFTWARE.
-
+*   **[azure-onenote-mcp-server](https://github.com/ZubeidHendricks/azure-onenote-mcp-server) by Zubeid Hendricks:** The core authentication flow using Device Code Credentials, token storage/retrieval strategy, and foundational patterns for wrapping Microsoft Graph API calls for OneNote (such as listing entities and creating pages) as MCP tools were significantly informed by or adapted from this project. This project is licensed under the MIT License.
 
 The extensive set of editing tools, advanced text extraction and HTML processing utilities, Zod schema integration, and the overall refined structure of this server are original contributions. 
 
