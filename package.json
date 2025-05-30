@@ -1,0 +1,40 @@
+{
+  "name": "onenote-mcp-server",
+  "version": "1.0.0",
+  "description": "An MCP server to interact with Microsoft OneNote, allowing LLMs to read, write, and edit notes.",
+  "main": "onenote-mcp.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node onenote-mcp.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eshlon/onenote-mcp-server.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "onenote",
+    "microsoft-graph",
+    "llm",
+    "ai",
+    "claude"
+  ],
+  "author": "Ehsan Shahabi",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/[eshlon/onenote-mcp-server/issues"
+  },
+  "homepage": "https://github.com/[eshlon/onenote-mcp-server#readme",
+  "dependencies": {
+    "@azure/identity": "^4.1.0",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@modelcontextprotocol/sdk": "^1.7.0", 
+    "jsdom": "^24.0.0",
+    "node-fetch": "^3.3.2",
+    "zod": "^3.23.8"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

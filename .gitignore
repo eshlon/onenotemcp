@@ -1,0 +1,31 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Project-specific files
+.access-token.txt # CRITICAL: Contains sensitive authentication token
+*.log
+
+# Environment variables
+.env
+.env*.local
+.env.*.local
+!.env.example # If you create an example env file, don't ignore it
+
+# Operating System generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE / Editor specific
+.idea/
+.vscode/
+*.swp
+*~
