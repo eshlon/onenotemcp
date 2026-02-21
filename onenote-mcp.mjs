@@ -293,7 +293,7 @@ function formatPageInfo(page, index = null, includeCreator = false) {
   const prefix = index !== null ? `${index + 1}. ` : '';
   const webUrl = page.links?.oneNoteWebUrl?.href || '';
   const urlLine = webUrl ? `
-   🔗 [Open in OneNote](${webUrl})` : '';
+   🔗 <${webUrl}>` : '';
   
   let creatorLine = '';
   if (includeCreator && page.createdBy?.user?.displayName) {
@@ -609,7 +609,7 @@ server.tool(
         const webUrl = page.links?.oneNoteWebUrl?.href || '';
         resultText += `${i + 1}. **${page.title}**\n`;
         resultText += `   📚 ${page._notebook} / 📂 ${page._section}\n`;
-        if (webUrl) resultText += `   🔗 [Open in OneNote](${webUrl})\n`;
+        if (webUrl) resultText += `   🔗 <${webUrl}>\n`;
         resultText += `   Created: ${new Date(page.createdDateTime).toLocaleString()}\n`;
         resultText += `   Modified: ${new Date(page.lastModifiedDateTime).toLocaleString()}`;
         
@@ -722,7 +722,7 @@ server.tool(
         const webUrl = page.links?.oneNoteWebUrl?.href || '';
         resultText += `${i + 1}. **${page.title}**\n`;
         resultText += `   📚 ${page._notebook} / 📂 ${page._section}\n`;
-        if (webUrl) resultText += `   🔗 [Open in OneNote](${webUrl})\n`;
+        if (webUrl) resultText += `   🔗 <${webUrl}>\n`;
         resultText += `   Modified: ${new Date(page.lastModifiedDateTime).toLocaleString()}\n`;
         resultText += `   Snippet: "...${page._snippet}..."\n\n`;
       }
@@ -861,7 +861,7 @@ server.tool(
           const webUrl = page.links?.oneNoteWebUrl?.href || '';
           resultText += `\n${i + 1}. **${page.title}**\n`;
           resultText += `   📂 ${page._section}\n`;
-          if (webUrl) resultText += `   🔗 [Open](${webUrl})\n`;
+          if (webUrl) resultText += `   🔗 <${webUrl}>\n`;
           resultText += `   Modified: ${new Date(page.lastModifiedDateTime).toLocaleString()}\n`;
           if (includeCreator && page.createdBy?.user?.displayName) {
             resultText += `   Created by: ${page.createdBy.user.displayName}\n`;
@@ -959,7 +959,7 @@ server.tool(
       return {
         content: [{
           type: 'text',
-          text: `✅ **Daily Note Created!**\n\n**Title:** ${response.title}\n**Notebook:** ${notebookName}\n**Section:** ${sectionName}\n**Page ID:** ${response.id}\n**Created:** ${new Date(response.createdDateTime).toLocaleString()}${webUrl ? `\n\n🔗 [Open in OneNote](${webUrl})` : ''}`
+          text: `✅ **Daily Note Created!**\n\n**Title:** ${response.title}\n**Notebook:** ${notebookName}\n**Section:** ${sectionName}\n**Page ID:** ${response.id}\n**Created:** ${new Date(response.createdDateTime).toLocaleString()}${webUrl ? `\n\n🔗 <${webUrl}>` : ''}`
         }]
       };
     } catch (error) {
@@ -1048,7 +1048,7 @@ server.tool(
         const webUrl = page.links?.oneNoteWebUrl?.href || '';
         resultText += `${i + 1}. **${page.title}**\n`;
         resultText += `   📂 ${page._section}\n`;
-        if (webUrl) resultText += `   🔗 [Open in OneNote](${webUrl})\n`;
+        if (webUrl) resultText += `   🔗 <${webUrl}>\n`;
         resultText += `   Modified: ${new Date(page.lastModifiedDateTime).toLocaleString()}\n\n`;
       }
       
