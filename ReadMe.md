@@ -10,9 +10,17 @@ This server provides a rich set of tools for advanced OneNote management, includ
 
 *   **Authentication:** Secure device code flow for Microsoft Graph API access.
 *   **Read Operations:**
-    *   List notebooks, sections, and pages.
-    *   Search pages by title.
+    *   List notebooks, sections, and pages with full pagination support.
+    *   Search pages by title across all notebooks.
+    *   **Advanced date-based searching** across all notebooks and sections.
+    *   Filter pages by creation or modification date (e.g., find all notes from today).
+    *   Scoped searches within specific notebooks for better performance.
     *   Get page content in various formats (full HTML, readable text, summary).
+*   **Pagination & Performance:**
+    *   Handles accounts with 10+ notebooks and 100+ sections efficiently.
+    *   Automatic retry logic with exponential backoff for rate limit handling.
+    *   Smart pagination using @odata.nextLink for large result sets.
+    *   Progress logging during long-running searches.
 *   **Write & Edit Operations:**
     *   Create new OneNote pages with custom HTML or markdown content.
     *   Update entire page content, preserving or replacing the title.
@@ -141,7 +149,11 @@ This server exposes the following tools to your AI assistant:
 
 **Reading OneNote Data:**
 *   `listNotebooks`: Lists all your OneNote notebooks.
-*   `searchPages`: Searches for pages by title across all notebooks. (Arg: `query` (optional string))
+*   `listSections`: Lists all sections in a specific notebook. (Args: `notebookId` (string))
+*   `listPagesInSection`: Lists pages in a specific section with pagination support. (Args: `sectionId` (string), `top` (number, optional, max 100), `orderBy` (enum: "created", "modified", optional))
+*   `searchPages`: Searches for pages by title across all notebooks with full pagination. (Arg: `query` (optional string))
+*   `searchPagesByDate`: Searches for pages created or modified within a date range across all notebooks and sections. (Args: `days` (number, default 1), `query` (optional keyword filter), `dateField` (enum: "created", "modified", "both"), `includeContent` (boolean, optional))
+*   `searchInNotebook`: Scoped search within a specific notebook with optional date and keyword filters. (Args: `notebookId` (string), `query` (optional string), `days` (optional number), `top` (number, max 100))
 *   `getPageContent`: Retrieves the content of a specific OneNote page. (Args: `pageId` (string), `format` (enum: "text", "html", "summary", optional, default: "text"))
 *   `getPageByTitle`: Finds a page by its title and retrieves its content. (Args: `title` (string), `format` (enum: "text", "html", "summary", optional, default: "text"))
 
@@ -158,8 +170,19 @@ This server exposes the following tools to your AI assistant:
 
 Once connected and authenticated, you can ask your AI assistant to perform tasks like:
 
+**Basic Operations:**
 *   "List my OneNote notebooks."
+*   "Show me the sections in my Work notebook."
+*   "List the most recent pages in section XYZ."
 *   "Create a new OneNote page titled 'Meeting Ideas' with the content 'Brainstorm new marketing strategies'."
+
+**Advanced Search & Discovery:**
+*   "Show me all notes I created or modified today." (uses `searchPagesByDate`)
+*   "Find all pages created in the last 7 days that mention 'project'."
+*   "Search for pages with 'meeting' in the title from the last 3 days."
+*   "In my Personal notebook, find all pages from this week."
+
+**Content Operations:**
 *   "Can you find my OneNote page about 'Project Phoenix' and tell me its summary?"
 *   "Append 'Follow up with John Doe' to the OneNote page with ID 'your-page-id-here'."
 *   "In my OneNote page 'Recipe Ideas', replace all instances of 'sugar' with 'sweetener'."
