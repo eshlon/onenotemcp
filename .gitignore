@@ -3,7 +3,8 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
+# NOTE: package-lock.json is intentionally NOT ignored.
+# Committing it ensures reproducible builds and prevents supply chain attacks.
 
 # Project-specific files
 .access-token.txt # CRITICAL: Contains sensitive authentication token

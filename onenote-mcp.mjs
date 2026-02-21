@@ -41,11 +41,21 @@ function loadExistingToken() {
       const tokenData = fs.readFileSync(tokenFilePath, 'utf8');
       try {
         const parsedToken = JSON.parse(tokenData); // New format: JSON object
+        // Validate token expiry before loading
+        if (parsedToken.expiresOn) {
+          const expiryDate = new Date(parsedToken.expiresOn);
+          if (expiryDate <= new Date()) {
+            console.error('Stored token has expired. Please re-authenticate.');
+            // Remove the expired token file
+            fs.unlinkSync(tokenFilePath);
+            return;
+          }
+        }
         accessToken = parsedToken.token;
         console.error('Loaded existing token from file (JSON format).');
       } catch (parseError) {
         accessToken = tokenData; // Old format: plain token string
-        console.error('Loaded existing token from file (plain text format).');
+        console.error('Loaded existing token from file (plain text format). Consider re-authenticating for token expiry tracking.');
       }
     }
   } catch (error) {
@@ -170,9 +180,30 @@ function extractTextSummary(html, maxLength = 300) {
  * @param {string} text - The plain text to convert.
  * @returns {string} The HTML representation.
  */
+/**
+ * Escapes a string for safe insertion into HTML attributes and text nodes.
+ * Use this for user-supplied values that should NOT be interpreted as HTML/markdown.
+ * @param {string} str - The string to escape.
+ * @returns {string} The HTML-escaped string.
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function textToHtml(text) {
   if (!text) return '';
-  if (text.includes('<html>') || text.includes('<!DOCTYPE html>')) return text; // Already HTML
+  if (text.includes('<html>') || text.includes('<!DOCTYPE html>')) {
+    // Sanitize pre-existing HTML: strip script and event handler attributes
+    return text
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
+  }
 
   let html = String(text) // Ensure text is a string
     .replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>') // Basic HTML escaping first
@@ -183,7 +214,14 @@ function textToHtml(text) {
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/__(.*?)__/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/_(.*?)_/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+      // Sanitize URL: only allow http, https, and mailto protocols
+      const trimmedUrl = url.trim();
+      if (/^(https?:|mailto:)/i.test(trimmedUrl)) {
+        return `<a href="${trimmedUrl}">${text}</a>`;
+      }
+      return text; // Strip the link if protocol is not allowed (e.g., javascript:)
+    })
     .replace(/^---+$/gm, '<hr>')
     .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
     .replace(/^[\*\-\+] (.+)$/gm, '<li>$1</li>')
@@ -357,7 +395,7 @@ Token will be saved automatically upon successful browser authentication.`;
             createdAt: new Date().toISOString(),
             expiresOn: tokenResponse.expiresOnTimestamp ? new Date(tokenResponse.expiresOnTimestamp).toISOString() : null
           };
-          fs.writeFileSync(tokenFilePath, JSON.stringify(tokenData, null, 2));
+          fs.writeFileSync(tokenFilePath, JSON.stringify(tokenData, null, 2), { mode: 0o600 });
           console.error('Token saved successfully!');
           initializeGraphClient();
         }).catch(error => {
@@ -967,22 +1005,23 @@ server.tool(
         return { content: [{ type: 'text', text: `ℹ️ **Note Already Exists**\n\nA page titled "${pageTitle}" already exists in ${notebookName}/${sectionName}.\n\nPage ID: ${existingPage.id}\n\nUse 'appendToPage' or 'updatePageContent' to modify it.` }] };
       }
       
-      // Create the page
+      // Create the page - use escapeHtml for title to prevent injection
       const htmlContent = content ? textToHtml(content) : '<p>Notes for today...</p>';
+      const safeTitle = escapeHtml(pageTitle);
       const pageHtml = `<!DOCTYPE html>
 <html>
 <head>
-  <title>${textToHtml(pageTitle)}</title>
+  <title>${safeTitle}</title>
   <meta charset="utf-8">
 </head>
 <body>
-  <h1>${textToHtml(pageTitle)}</h1>
+  <h1>${safeTitle}</h1>
   ${htmlContent}
   <hr>
   <p><em>Created via OneNote MCP on ${new Date().toLocaleString()}</em></p>
 </body>
 </html>`;
-      
+
       const response = await graphClient
         .api(`/me/onenote/sections/${section.id}/pages`)
         .header('Content-Type', 'application/xhtml+xml')
@@ -1383,8 +1422,8 @@ server.tool(
       
       const headerRow = rows[0];
       const dataRows = rows.slice(1);
-      let tableHtml = title ? `<h3>📊 ${textToHtml(title)}</h3>` : '';
-      tableHtml += `<table style="border-collapse: collapse; width: 100%; margin: 10px 0;"><thead><tr style="background-color: #f5f5f5;">${headerRow.map(cell => `<th style="border: 1px solid #ddd; padding: 8px; text-align: left;">${textToHtml(cell)}</th>`).join('')}</tr></thead><tbody>${dataRows.map(row => `<tr>${row.map(cell => `<td style="border: 1px solid #ddd; padding: 8px;">${textToHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+      let tableHtml = title ? `<h3>📊 ${escapeHtml(title)}</h3>` : '';
+      tableHtml += `<table style="border-collapse: collapse; width: 100%; margin: 10px 0;"><thead><tr style="background-color: #f5f5f5;">${headerRow.map(cell => `<th style="border: 1px solid #ddd; padding: 8px; text-align: left;">${escapeHtml(cell)}</th>`).join('')}</tr></thead><tbody>${dataRows.map(row => `<tr>${row.map(cell => `<td style="border: 1px solid #ddd; padding: 8px;">${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
       
       const action = position === 'top' ? 'prepend' : 'append';
       const url = `https://graph.microsoft.com/v1.0/me/onenote/pages/${pageId}/content`;
@@ -1423,20 +1462,21 @@ server.tool(
       const targetSectionName = sectionsResponse.value[0].displayName;
       
       const htmlContent = textToHtml(content);
+      const safeTitle = escapeHtml(title);
       const pageHtml = `<!DOCTYPE html>
 <html>
 <head>
-  <title>${textToHtml(title)}</title>
+  <title>${safeTitle}</title>
   <meta charset="utf-8">
 </head>
 <body>
-  <h1>${textToHtml(title)}</h1>
+  <h1>${safeTitle}</h1>
   ${htmlContent}
   <hr>
   <p><em>Created via OneNote MCP on ${new Date().toLocaleString()}</em></p>
 </body>
 </html>`;
-      
+
       const response = await graphClient
         .api(`/me/onenote/sections/${targetSectionId}/pages`)
         .header('Content-Type', 'application/xhtml+xml')
@@ -1480,6 +1520,10 @@ async function main() {
     
     console.error('🚀✨ OneNote Ultimate MCP Server is now LIVE! ✨🚀');
     console.error(`   Client ID: ${clientId.substring(0, 8)}... (Using ${process.env.AZURE_CLIENT_ID ? 'environment variable' : 'default'})`);
+    if (!process.env.AZURE_CLIENT_ID) {
+      console.error('   ⚠️  WARNING: Using default Microsoft Graph Explorer client ID.');
+      console.error('   ⚠️  For production use, register your own Azure AD app and set AZURE_CLIENT_ID.');
+    }
     console.error('   Ready to manage your OneNote like never before!');
     console.error('--- Available Tool Categories ---');
     console.error('   🔐 Auth: authenticate, saveAccessToken');
