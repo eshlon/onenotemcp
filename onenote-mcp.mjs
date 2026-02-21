@@ -468,7 +468,7 @@ server.tool(
       const orderField = orderBy === 'created' ? 'createdDateTime' : 'lastModifiedDateTime';
       console.error(`Fetching pages from section ID: ${sectionId} (top: ${top}, orderBy: ${orderField})`);
       
-      const apiPath = `/me/onenote/sections/${sectionId}/pages?$select=id,title,createdDateTime,lastModifiedDateTime&$top=${top}&$orderby=${orderField} desc`;
+      const apiPath = `/me/onenote/sections/${sectionId}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$top=${top}&$orderby=${orderField} desc`;
       const pages = await paginateGraphRequest(apiPath);
       
       if (pages.length > 0) {
@@ -493,7 +493,7 @@ server.tool(
     try {
       await ensureGraphClient();
       console.error('Searching pages with pagination...');
-      const pages = await paginateGraphRequest('/me/onenote/pages?$select=id,title,createdDateTime,lastModifiedDateTime');
+      const pages = await paginateGraphRequest('/me/onenote/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links');
       
       let filteredPages = pages;
       if (query) {
@@ -548,7 +548,7 @@ server.tool(
         
         for (const section of sections) {
           try {
-            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime&$top=100`;
+            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$top=100`;
             const pages = await paginateGraphRequest(apiPath);
             
             // Filter by date
@@ -671,7 +671,7 @@ server.tool(
           if (matchingPages.length >= maxPages) break;
           
           try {
-            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime&$top=20`;
+            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$top=20`;
             const pages = await paginateGraphRequest(apiPath);
             
             for (const page of pages) {
@@ -811,7 +811,7 @@ server.tool(
         
         for (const section of sections) {
           try {
-            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime&$expand=lastModifiedBy,createdBy&$top=100`;
+            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$expand=lastModifiedBy,createdBy&$top=100`;
             const pages = await paginateGraphRequest(apiPath);
             
             const myPages = pages.filter(page => {
@@ -996,7 +996,7 @@ server.tool(
       
       for (const section of sections) {
         try {
-          const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime&$top=${top}`;
+          const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$top=${top}`;
           const pages = await paginateGraphRequest(apiPath);
           
           const matchingPages = pages.filter(page => {
