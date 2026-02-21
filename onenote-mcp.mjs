@@ -291,7 +291,7 @@ async function fetchPageContentAdvanced(pageId, method = 'httpDirect') {
  */
 function formatPageInfo(page, index = null, includeCreator = false) {
   const prefix = index !== null ? `${index + 1}. ` : '';
-  const webUrl = page.links?.oneNoteWebUrl || '';
+  const webUrl = page.links?.oneNoteWebUrl?.href || '';
   const urlLine = webUrl ? `
    🔗 [Open in OneNote](${webUrl})` : '';
   
@@ -606,7 +606,7 @@ server.tool(
       const displayPages = allMatchingPages.slice(0, 20);
       for (let i = 0; i < displayPages.length; i++) {
         const page = displayPages[i];
-        const webUrl = page.links?.oneNoteWebUrl || '';
+        const webUrl = page.links?.oneNoteWebUrl?.href || '';
         resultText += `${i + 1}. **${page.title}**\n`;
         resultText += `   📚 ${page._notebook} / 📂 ${page._section}\n`;
         if (webUrl) resultText += `   🔗 [Open in OneNote](${webUrl})\n`;
@@ -719,7 +719,7 @@ server.tool(
       
       for (let i = 0; i < matchingPages.length; i++) {
         const page = matchingPages[i];
-        const webUrl = page.links?.oneNoteWebUrl || '';
+        const webUrl = page.links?.oneNoteWebUrl?.href || '';
         resultText += `${i + 1}. **${page.title}**\n`;
         resultText += `   📚 ${page._notebook} / 📂 ${page._section}\n`;
         if (webUrl) resultText += `   🔗 [Open in OneNote](${webUrl})\n`;
@@ -858,7 +858,7 @@ server.tool(
         resultText += `\n📚 **${notebookName}** (${pages.length} pages)\n`;
         
         pages.forEach((page, i) => {
-          const webUrl = page.links?.oneNoteWebUrl || '';
+          const webUrl = page.links?.oneNoteWebUrl?.href || '';
           resultText += `\n${i + 1}. **${page.title}**\n`;
           resultText += `   📂 ${page._section}\n`;
           if (webUrl) resultText += `   🔗 [Open](${webUrl})\n`;
@@ -954,7 +954,7 @@ server.tool(
         .header('Content-Type', 'application/xhtml+xml')
         .post(pageHtml);
       
-      const webUrl = response.links?.oneNoteWebUrl || '';
+      const webUrl = response.links?.oneNoteWebUrl?.href || '';
       
       return {
         content: [{
@@ -1045,7 +1045,7 @@ server.tool(
       const displayPages = allMatchingPages.slice(0, 20);
       for (let i = 0; i < displayPages.length; i++) {
         const page = displayPages[i];
-        const webUrl = page.links?.oneNoteWebUrl || '';
+        const webUrl = page.links?.oneNoteWebUrl?.href || '';
         resultText += `${i + 1}. **${page.title}**\n`;
         resultText += `   📂 ${page._section}\n`;
         if (webUrl) resultText += `   🔗 [Open in OneNote](${webUrl})\n`;
