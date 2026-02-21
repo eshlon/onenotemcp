@@ -14,8 +14,15 @@ This server provides a rich set of tools for advanced OneNote management, includ
     *   Search pages by title across all notebooks.
     *   **Advanced date-based searching** across all notebooks and sections.
     *   Filter pages by creation or modification date (e.g., find all notes from today).
+    *   **Content search** - search within page content, not just titles.
+    *   **Track modifications by user** - see who created or last modified pages.
     *   Scoped searches within specific notebooks for better performance.
     *   Get page content in various formats (full HTML, readable text, summary).
+*   **Productivity Tools:**
+    *   **Standup prep helper** - quickly see what pages YOU modified since last standup.
+    *   **Quick daily note creator** - create dated notes with one command.
+    *   Automatic date formatting (M/D/YY format).
+    *   Smart duplicate detection (won't recreate existing daily notes).
 *   **Pagination & Performance:**
     *   Handles accounts with 10+ notebooks and 100+ sections efficiently.
     *   Automatic retry logic with exponential backoff for rate limit handling.
@@ -153,9 +160,14 @@ This server exposes the following tools to your AI assistant:
 *   `listPagesInSection`: Lists pages in a specific section with pagination support. (Args: `sectionId` (string), `top` (number, optional, max 100), `orderBy` (enum: "created", "modified", optional))
 *   `searchPages`: Searches for pages by title across all notebooks with full pagination. (Arg: `query` (optional string))
 *   `searchPagesByDate`: Searches for pages created or modified within a date range across all notebooks and sections. (Args: `days` (number, default 1), `query` (optional keyword filter), `dateField` (enum: "created", "modified", "both"), `includeContent` (boolean, optional))
+*   `searchPageContent`: **NEW!** Searches for text within page content (not just titles). (Args: `query` (string), `days` (optional number), `notebookId` (optional), `maxPages` (default 20))
 *   `searchInNotebook`: Scoped search within a specific notebook with optional date and keyword filters. (Args: `notebookId` (string), `query` (optional string), `days` (optional number), `top` (number, max 100))
 *   `getPageContent`: Retrieves the content of a specific OneNote page. (Args: `pageId` (string), `format` (enum: "text", "html", "summary", optional, default: "text"))
 *   `getPageByTitle`: Finds a page by its title and retrieves its content. (Args: `title` (string), `format` (enum: "text", "html", "summary", optional, default: "text"))
+
+**Productivity Tools:**
+*   `getMyRecentChanges`: **NEW!** Shows pages YOU modified since a date - perfect for standup prep! (Args: `sinceDate` (string or "monday"), `days` (optional number), `notebookId` (optional), `includeCreator` (boolean))
+*   `createDailyNote`: **NEW!** Quickly create a daily note with auto-formatted date. (Args: `notebookName` (string), `sectionName` (string), `date` (optional, defaults to "today"), `title` (optional), `content` (optional))
 
 **Editing & Creating OneNote Pages:**
 *   `createPage`: Creates a new OneNote page in the first available section. (Args: `title` (string), `content` (string - HTML or markdown))
@@ -181,6 +193,13 @@ Once connected and authenticated, you can ask your AI assistant to perform tasks
 *   "Find all pages created in the last 7 days that mention 'project'."
 *   "Search for pages with 'meeting' in the title from the last 3 days."
 *   "In my Personal notebook, find all pages from this week."
+*   "Search for 'Project Phoenix' in page content" (searches actual content, not just titles!)
+
+**Productivity & Standup Prep:**
+*   "What pages did I modify since Monday?" (perfect for Thu standup prep!)
+*   "Show me my recent changes from the last 3 days"
+*   "Create today's note in SQLNikon/Elon" (auto-formats date)
+*   "Create a daily note for 2/20/26 in Data Team/Stand Ups"
 
 **Content Operations:**
 *   "Can you find my OneNote page about 'Project Phoenix' and tell me its summary?"

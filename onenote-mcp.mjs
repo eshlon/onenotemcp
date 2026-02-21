@@ -286,14 +286,29 @@ async function fetchPageContentAdvanced(pageId, method = 'httpDirect') {
  * Formats OneNote page information for display.
  * @param {object} page - The OneNote page object from Graph API.
  * @param {number | null} [index=null] - Optional index for numbered lists.
+ * @param {boolean} [includeCreator=false] - Include creator/modifier information.
  * @returns {string} Formatted page information string.
  */
-function formatPageInfo(page, index = null) {
+function formatPageInfo(page, index = null, includeCreator = false) {
   const prefix = index !== null ? `${index + 1}. ` : '';
+  const webUrl = page.links?.oneNoteWebUrl || '';
+  const urlLine = webUrl ? `
+   🔗 [Open in OneNote](${webUrl})` : '';
+  
+  let creatorLine = '';
+  if (includeCreator && page.createdBy?.user?.displayName) {
+    creatorLine = `
+   Created by: ${page.createdBy.user.displayName}`;
+  }
+  if (includeCreator && page.lastModifiedBy?.user?.displayName) {
+    creatorLine += `
+   Modified by: ${page.lastModifiedBy.user.displayName}`;
+  }
+  
   return `${prefix}**${page.title}**
    ID: ${page.id}
    Created: ${new Date(page.createdDateTime).toLocaleDateString()}
-   Modified: ${new Date(page.lastModifiedDateTime).toLocaleDateString()}`;
+   Modified: ${new Date(page.lastModifiedDateTime).toLocaleDateString()}${creatorLine}${urlLine}`;
 }
 
 // ============================================================================
@@ -453,7 +468,7 @@ server.tool(
       const orderField = orderBy === 'created' ? 'createdDateTime' : 'lastModifiedDateTime';
       console.error(`Fetching pages from section ID: ${sectionId} (top: ${top}, orderBy: ${orderField})`);
       
-      const apiPath = `/me/onenote/sections/${sectionId}/pages?$select=id,title,createdDateTime,lastModifiedDateTime&$top=${top}&$orderby=${orderField} desc`;
+      const apiPath = `/me/onenote/sections/${sectionId}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$top=${top}&$orderby=${orderField} desc`;
       const pages = await paginateGraphRequest(apiPath);
       
       if (pages.length > 0) {
@@ -478,7 +493,7 @@ server.tool(
     try {
       await ensureGraphClient();
       console.error('Searching pages with pagination...');
-      const pages = await paginateGraphRequest('/me/onenote/pages?$select=id,title,createdDateTime,lastModifiedDateTime');
+      const pages = await paginateGraphRequest('/me/onenote/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links');
       
       let filteredPages = pages;
       if (query) {
@@ -533,7 +548,7 @@ server.tool(
         
         for (const section of sections) {
           try {
-            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime&$top=100`;
+            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$top=100`;
             const pages = await paginateGraphRequest(apiPath);
             
             // Filter by date
@@ -591,9 +606,10 @@ server.tool(
       const displayPages = allMatchingPages.slice(0, 20);
       for (let i = 0; i < displayPages.length; i++) {
         const page = displayPages[i];
+        const webUrl = page.links?.oneNoteWebUrl || '';
         resultText += `${i + 1}. **${page.title}**\n`;
         resultText += `   📚 ${page._notebook} / 📂 ${page._section}\n`;
-        resultText += `   ID: ${page.id}\n`;
+        if (webUrl) resultText += `   🔗 [Open in OneNote](${webUrl})\n`;
         resultText += `   Created: ${new Date(page.createdDateTime).toLocaleString()}\n`;
         resultText += `   Modified: ${new Date(page.lastModifiedDateTime).toLocaleString()}`;
         
@@ -617,6 +633,338 @@ server.tool(
       return { content: [{ type: 'text', text: resultText }] };
     } catch (error) {
       return { isError: true, content: [{ type: 'text', text: `Failed to search pages by date: ${error.message}` }] };
+    }
+  }
+);
+
+server.tool(
+  'searchPageContent',
+  {
+    query: z.string().describe('Text to search for within page content.'),
+    days: z.number().min(1).describe('Optional: limit to pages from last N days.').optional(),
+    notebookId: z.string().describe('Optional: limit to specific notebook.').optional(),
+    maxPages: z.number().min(1).max(50).default(20).describe('Max number of pages to search (default 20).').optional()
+  },
+  async ({ query, days, notebookId, maxPages }) => {
+    try {
+      await ensureGraphClient();
+      const searchTerm = query.toLowerCase();
+      const threshold = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : null;
+      console.error(`Searching page content for "${query}"...`);
+      
+      let notebooks = [];
+      if (notebookId) {
+        const nb = await graphClient.api(`/me/onenote/notebooks/${notebookId}`).get();
+        notebooks = [nb];
+      } else {
+        const response = await graphClient.api('/me/onenote/notebooks').get();
+        notebooks = response.value || [];
+      }
+      
+      let matchingPages = [];
+      let pagesSearched = 0;
+      
+      for (const notebook of notebooks) {
+        const sections = await paginateGraphRequest(`/me/onenote/notebooks/${notebook.id}/sections`);
+        
+        for (const section of sections) {
+          if (matchingPages.length >= maxPages) break;
+          
+          try {
+            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$top=20`;
+            const pages = await paginateGraphRequest(apiPath);
+            
+            for (const page of pages) {
+              if (matchingPages.length >= maxPages) break;
+              
+              // Date filter if specified
+              if (threshold) {
+                const modified = new Date(page.lastModifiedDateTime);
+                if (modified < threshold) continue;
+              }
+              
+              pagesSearched++;
+              
+              // Fetch and search content
+              try {
+                const htmlContent = await fetchPageContentAdvanced(page.id, 'httpDirect');
+                const textContent = extractReadableText(htmlContent).toLowerCase();
+                
+                if (textContent.includes(searchTerm)) {
+                  page._notebook = notebook.displayName || notebook.name;
+                  page._section = section.displayName || section.name;
+                  page._snippet = extractSnippet(textContent, searchTerm, 150);
+                  matchingPages.push(page);
+                }
+              } catch (contentError) {
+                console.error(`Error reading page ${page.title}: ${contentError.message}`);
+              }
+            }
+          } catch (sectionError) {
+            console.error(`Error in section ${section.displayName}: ${sectionError.message}`);
+          }
+        }
+        
+        if (matchingPages.length >= maxPages) break;
+      }
+      
+      console.error(`Content search complete: ${matchingPages.length} matches from ${pagesSearched} pages searched`);
+      
+      if (matchingPages.length === 0) {
+        return { content: [{ type: 'text', text: `🔍 No pages found containing "${query}" in their content.\nSearched ${pagesSearched} pages.` }] };
+      }
+      
+      let resultText = `🔍 **Content Search Results** (${matchingPages.length} matches for "${query}"):\n`;
+      resultText += `Searched ${pagesSearched} pages\n\n`;
+      
+      for (let i = 0; i < matchingPages.length; i++) {
+        const page = matchingPages[i];
+        const webUrl = page.links?.oneNoteWebUrl || '';
+        resultText += `${i + 1}. **${page.title}**\n`;
+        resultText += `   📚 ${page._notebook} / 📂 ${page._section}\n`;
+        if (webUrl) resultText += `   🔗 [Open in OneNote](${webUrl})\n`;
+        resultText += `   Modified: ${new Date(page.lastModifiedDateTime).toLocaleString()}\n`;
+        resultText += `   Snippet: "...${page._snippet}..."\n\n`;
+      }
+      
+      if (matchingPages.length >= maxPages) {
+        resultText += `\n💡 Showing first ${maxPages} matches. Use 'maxPages' parameter or narrow search with 'days' or 'notebookId'.`;
+      }
+      
+      return { content: [{ type: 'text', text: resultText }] };
+    } catch (error) {
+      return { isError: true, content: [{ type: 'text', text: `Failed to search page content: ${error.message}` }] };
+    }
+  }
+);
+
+/**
+ * Extracts a snippet around the search term.
+ * @param {string} text - The full text to search.
+ * @param {string} searchTerm - The term to find.
+ * @param {number} maxLength - Maximum snippet length.
+ * @returns {string} The snippet.
+ */
+function extractSnippet(text, searchTerm, maxLength = 150) {
+  const index = text.indexOf(searchTerm);
+  if (index === -1) return text.substring(0, maxLength);
+  
+  const start = Math.max(0, index - Math.floor(maxLength / 2));
+  const end = Math.min(text.length, start + maxLength);
+  let snippet = text.substring(start, end).trim();
+  
+  if (start > 0) snippet = '...' + snippet;
+  if (end < text.length) snippet = snippet + '...';
+  
+  return snippet;
+}
+
+server.tool(
+  'getMyRecentChanges',
+  {
+    sinceDate: z.string().describe('Start date in YYYY-MM-DD format, or "monday" for last Monday.').optional(),
+    days: z.number().min(1).describe('Alternative: number of days back to search (e.g., 3 for last 3 days).').optional(),
+    notebookId: z.string().describe('Optional: limit to specific notebook.').optional(),
+    includeCreator: z.boolean().default(false).describe('Show who created/modified each page.').optional()
+  },
+  async ({ sinceDate, days, notebookId, includeCreator }) => {
+    try {
+      await ensureGraphClient();
+      
+      // Get current user info
+      const userInfo = await graphClient.api('/me').get();
+      const currentUserEmail = userInfo.userPrincipalName?.toLowerCase();
+      
+      // Calculate threshold date
+      let threshold;
+      if (sinceDate === 'monday') {
+        const today = new Date();
+        const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ...
+        const daysBack = dayOfWeek === 0 ? 6 : dayOfWeek === 1 ? 0 : dayOfWeek - 1;
+        threshold = new Date(today.getTime() - daysBack * 24 * 60 * 60 * 1000);
+        threshold.setHours(0, 0, 0, 0);
+      } else if (sinceDate) {
+        threshold = new Date(sinceDate);
+      } else if (days) {
+        threshold = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      } else {
+        // Default to last 3 days
+        threshold = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      }
+      
+      console.error(`Finding your changes since ${threshold.toLocaleDateString()}...`);
+      
+      // Get notebooks
+      let notebooks = [];
+      if (notebookId) {
+        const nb = await graphClient.api(`/me/onenote/notebooks/${notebookId}`).get();
+        notebooks = [nb];
+      } else {
+        const response = await graphClient.api('/me/onenote/notebooks').get();
+        notebooks = response.value || [];
+      }
+      
+      let myChanges = [];
+      
+      for (const notebook of notebooks) {
+        const sections = await paginateGraphRequest(`/me/onenote/notebooks/${notebook.id}/sections`);
+        
+        for (const section of sections) {
+          try {
+            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$expand=lastModifiedBy,createdBy&$top=100`;
+            const pages = await paginateGraphRequest(apiPath);
+            
+            const myPages = pages.filter(page => {
+              const modified = new Date(page.lastModifiedDateTime);
+              if (modified < threshold) return false;
+              
+              // Check if current user modified it
+              const modifierEmail = page.lastModifiedBy?.user?.email?.toLowerCase();
+              return modifierEmail === currentUserEmail;
+            });
+            
+            myPages.forEach(page => {
+              page._notebook = notebook.displayName || notebook.name;
+              page._section = section.displayName || section.name;
+            });
+            
+            myChanges = myChanges.concat(myPages);
+          } catch (sectionError) {
+            console.error(`Error in section ${section.displayName}: ${sectionError.message}`);
+          }
+        }
+      }
+      
+      console.error(`Found ${myChanges.length} pages you modified`);
+      
+      if (myChanges.length === 0) {
+        return { content: [{ type: 'text', text: `📝 No pages found that you modified since ${threshold.toLocaleDateString()}.` }] };
+      }
+      
+      // Sort by most recent
+      myChanges.sort((a, b) => new Date(b.lastModifiedDateTime) - new Date(a.lastModifiedDateTime));
+      
+      let resultText = `📝 **Your Recent Changes** (${myChanges.length} pages since ${threshold.toLocaleDateString()}):\n\n`;
+      
+      // Group by notebook
+      const byNotebook = {};
+      myChanges.forEach(page => {
+        const nb = page._notebook;
+        if (!byNotebook[nb]) byNotebook[nb] = [];
+        byNotebook[nb].push(page);
+      });
+      
+      for (const [notebookName, pages] of Object.entries(byNotebook)) {
+        resultText += `\n📚 **${notebookName}** (${pages.length} pages)\n`;
+        
+        pages.forEach((page, i) => {
+          const webUrl = page.links?.oneNoteWebUrl || '';
+          resultText += `\n${i + 1}. **${page.title}**\n`;
+          resultText += `   📂 ${page._section}\n`;
+          if (webUrl) resultText += `   🔗 [Open](${webUrl})\n`;
+          resultText += `   Modified: ${new Date(page.lastModifiedDateTime).toLocaleString()}\n`;
+          if (includeCreator && page.createdBy?.user?.displayName) {
+            resultText += `   Created by: ${page.createdBy.user.displayName}\n`;
+          }
+        });
+      }
+      
+      resultText += `\n\n💡 **Standup Tip:** Use this list to fill out your "Async" section!`;
+      
+      return { content: [{ type: 'text', text: resultText }] };
+    } catch (error) {
+      return { isError: true, content: [{ type: 'text', text: `Failed to get recent changes: ${error.message}` }] };
+    }
+  }
+);
+
+server.tool(
+  'createDailyNote',
+  {
+    notebookName: z.string().describe('Name of the notebook (e.g., "SQLNikon").'),
+    sectionName: z.string().describe('Name of the section (e.g., "Elon").'),
+    date: z.string().describe('Date in YYYY-MM-DD format, or "today" for current date.').optional(),
+    title: z.string().describe('Optional custom title (defaults to M/D/YY format).').optional(),
+    content: z.string().describe('Optional initial content for the note.').optional()
+  },
+  async ({ notebookName, sectionName, date, title, content }) => {
+    try {
+      await ensureGraphClient();
+      
+      // Determine the date
+      let noteDate;
+      if (date === 'today' || !date) {
+        noteDate = new Date();
+      } else {
+        noteDate = new Date(date);
+      }
+      
+      // Format title as M/D/YY (e.g., "2/20/26")
+      const defaultTitle = `${noteDate.getMonth() + 1}/${noteDate.getDate()}/${noteDate.getFullYear().toString().slice(-2)}`;
+      const pageTitle = title || defaultTitle;
+      
+      console.error(`Creating daily note "${pageTitle}" in ${notebookName}/${sectionName}...`);
+      
+      // Find the notebook
+      const notebooks = await graphClient.api('/me/onenote/notebooks').get();
+      const notebook = (notebooks.value || []).find(nb => 
+        nb.displayName?.toLowerCase() === notebookName.toLowerCase()
+      );
+      
+      if (!notebook) {
+        return { isError: true, content: [{ type: 'text', text: `❌ Notebook "${notebookName}" not found. Available notebooks:\n${(notebooks.value || []).map(nb => `  - ${nb.displayName}`).join('\n')}` }] };
+      }
+      
+      // Find the section
+      const sections = await paginateGraphRequest(`/me/onenote/notebooks/${notebook.id}/sections`);
+      const section = sections.find(s => 
+        s.displayName?.toLowerCase() === sectionName.toLowerCase()
+      );
+      
+      if (!section) {
+        return { isError: true, content: [{ type: 'text', text: `❌ Section "${sectionName}" not found in notebook "${notebookName}". Available sections:\n${sections.map(s => `  - ${s.displayName}`).join('\n')}` }] };
+      }
+      
+      // Check if page already exists
+      const existingPages = await paginateGraphRequest(`/me/onenote/sections/${section.id}/pages?$select=id,title`);
+      const existingPage = existingPages.find(p => p.title === pageTitle);
+      
+      if (existingPage) {
+        return { content: [{ type: 'text', text: `ℹ️ **Note Already Exists**\n\nA page titled "${pageTitle}" already exists in ${notebookName}/${sectionName}.\n\nPage ID: ${existingPage.id}\n\nUse 'appendToPage' or 'updatePageContent' to modify it.` }] };
+      }
+      
+      // Create the page
+      const htmlContent = content ? textToHtml(content) : '<p>Notes for today...</p>';
+      const pageHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <title>${textToHtml(pageTitle)}</title>
+  <meta charset="utf-8">
+</head>
+<body>
+  <h1>${textToHtml(pageTitle)}</h1>
+  ${htmlContent}
+  <hr>
+  <p><em>Created via OneNote MCP on ${new Date().toLocaleString()}</em></p>
+</body>
+</html>`;
+      
+      const response = await graphClient
+        .api(`/me/onenote/sections/${section.id}/pages`)
+        .header('Content-Type', 'application/xhtml+xml')
+        .post(pageHtml);
+      
+      const webUrl = response.links?.oneNoteWebUrl || '';
+      
+      return {
+        content: [{
+          type: 'text',
+          text: `✅ **Daily Note Created!**\n\n**Title:** ${response.title}\n**Notebook:** ${notebookName}\n**Section:** ${sectionName}\n**Page ID:** ${response.id}\n**Created:** ${new Date(response.createdDateTime).toLocaleString()}${webUrl ? `\n\n🔗 [Open in OneNote](${webUrl})` : ''}`
+        }]
+      };
+    } catch (error) {
+      console.error(`CREATE DAILY NOTE ERROR: ${error.message}`, error.stack);
+      return { isError: true, content: [{ type: 'text', text: `❌ **Error creating daily note:** ${error.message}` }] };
     }
   }
 );
@@ -648,7 +996,7 @@ server.tool(
       
       for (const section of sections) {
         try {
-          const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime&$top=${top}`;
+          const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$top=${top}`;
           const pages = await paginateGraphRequest(apiPath);
           
           const matchingPages = pages.filter(page => {
@@ -697,9 +1045,10 @@ server.tool(
       const displayPages = allMatchingPages.slice(0, 20);
       for (let i = 0; i < displayPages.length; i++) {
         const page = displayPages[i];
+        const webUrl = page.links?.oneNoteWebUrl || '';
         resultText += `${i + 1}. **${page.title}**\n`;
         resultText += `   📂 ${page._section}\n`;
-        resultText += `   ID: ${page.id}\n`;
+        if (webUrl) resultText += `   🔗 [Open in OneNote](${webUrl})\n`;
         resultText += `   Modified: ${new Date(page.lastModifiedDateTime).toLocaleString()}\n\n`;
       }
       
@@ -1100,7 +1449,8 @@ async function main() {
     console.error('   Ready to manage your OneNote like never before!');
     console.error('--- Available Tool Categories ---');
     console.error('   🔐 Auth: authenticate, saveAccessToken');
-    console.error('   📚 Read: listNotebooks, listSections, listPagesInSection, searchPages, searchPagesByDate, searchInNotebook, getPageContent, getPageByTitle');
+    console.error('   📚 Read: listNotebooks, listSections, listPagesInSection, searchPages, searchPagesByDate, searchPageContent, searchInNotebook, getPageContent, getPageByTitle');
+    console.error('   📝 Productivity: getMyRecentChanges, createDailyNote');
     console.error('   ✏️ Edit: updatePageContent, appendToPage, updatePageTitle, replaceTextInPage, addNoteToPage, addTableToPage');
     console.error('   ➕ Create: createPage');
     console.error('---------------------------------');
