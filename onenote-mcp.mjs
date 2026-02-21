@@ -521,9 +521,11 @@ server.tool(
     days: z.number().min(1).default(1).describe('Number of days back to search (1 = today only).').optional(),
     query: z.string().describe('Optional keyword to filter page titles.').optional(),
     dateField: z.enum(['created', 'modified', 'both']).default('both').describe('Filter by created, modified, or both dates.').optional(),
-    includeContent: z.boolean().default(false).describe('Include page content preview (slower).').optional()
+    includeContent: z.boolean().default(false).describe('Include page content preview (slower).').optional(),
+    createdBy: z.string().describe('Optional: filter by creator name or email (e.g., "Josue" or "josue@elon.edu").').optional(),
+    modifiedBy: z.string().describe('Optional: filter by modifier name or email (e.g., "Josue" or "josue@elon.edu").').optional()
   },
-  async ({ days, query, dateField, includeContent }) => {
+  async ({ days, query, dateField, includeContent, createdBy, modifiedBy }) => {
     try {
       await ensureGraphClient();
       const threshold = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -548,7 +550,7 @@ server.tool(
         
         for (const section of sections) {
           try {
-            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$top=100`;
+            const apiPath = `/me/onenote/sections/${section.id}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,links&$expand=lastModifiedBy,createdBy&$top=100`;
             const pages = await paginateGraphRequest(apiPath);
             
             // Filter by date
@@ -565,13 +567,37 @@ server.tool(
                 dateMatch = created >= threshold || modified >= threshold;
               }
               
+              if (!dateMatch) return false;
+              
               // Optional keyword filter
-              if (dateMatch && query) {
+              if (query) {
                 const searchTerm = query.toLowerCase();
-                return page.title && page.title.toLowerCase().includes(searchTerm);
+                if (!page.title || !page.title.toLowerCase().includes(searchTerm)) {
+                  return false;
+                }
               }
               
-              return dateMatch;
+              // Optional createdBy filter
+              if (createdBy) {
+                const filterTerm = createdBy.toLowerCase();
+                const creatorName = page.createdBy?.user?.displayName?.toLowerCase() || '';
+                const creatorEmail = page.createdBy?.user?.email?.toLowerCase() || '';
+                if (!creatorName.includes(filterTerm) && !creatorEmail.includes(filterTerm)) {
+                  return false;
+                }
+              }
+              
+              // Optional modifiedBy filter
+              if (modifiedBy) {
+                const filterTerm = modifiedBy.toLowerCase();
+                const modifierName = page.lastModifiedBy?.user?.displayName?.toLowerCase() || '';
+                const modifierEmail = page.lastModifiedBy?.user?.email?.toLowerCase() || '';
+                if (!modifierName.includes(filterTerm) && !modifierEmail.includes(filterTerm)) {
+                  return false;
+                }
+              }
+              
+              return true;
             });
             
             // Add notebook and section context
@@ -601,6 +627,8 @@ server.tool(
       // Format results
       let resultText = `🔍 **Date Search Results** (${allMatchingPages.length} found in last ${days} day(s)):\n`;
       if (query) resultText += `Keyword: "${query}"\n`;
+      if (createdBy) resultText += `Created by: "${createdBy}"\n`;
+      if (modifiedBy) resultText += `Modified by: "${modifiedBy}"\n`;
       resultText += `Checked: ${notebooks.length} notebooks, ${totalSectionsChecked} sections\n\n`;
       
       const displayPages = allMatchingPages.slice(0, 20);
@@ -610,8 +638,14 @@ server.tool(
         resultText += `${i + 1}. **${page.title}**\n`;
         resultText += `   📚 ${page._notebook} / 📂 ${page._section}\n`;
         if (webUrl) resultText += `   🔗 <${webUrl}>\n`;
-        resultText += `   Created: ${new Date(page.createdDateTime).toLocaleString()}\n`;
-        resultText += `   Modified: ${new Date(page.lastModifiedDateTime).toLocaleString()}`;
+        resultText += `   Created: ${new Date(page.createdDateTime).toLocaleString()}`;
+        if (page.createdBy?.user?.displayName) {
+          resultText += ` by ${page.createdBy.user.displayName}`;
+        }
+        resultText += `\n   Modified: ${new Date(page.lastModifiedDateTime).toLocaleString()}`;
+        if (page.lastModifiedBy?.user?.displayName) {
+          resultText += ` by ${page.lastModifiedBy.user.displayName}`;
+        }
         
         if (includeContent) {
           try {
