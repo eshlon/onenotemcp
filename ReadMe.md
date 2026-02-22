@@ -148,35 +148,270 @@ The saved token will be used for subsequent sessions until it expires, at which 
 
 ## Available MCP Tools
 
-This server exposes the following tools to your AI assistant:
+This server exposes the following tools to your AI assistant. All tools require authentication unless otherwise noted.
 
-**Authentication:**
-*   `authenticate`: Initiates the device code authentication flow with Microsoft Graph.
-*   `saveAccessToken`: Loads and verifies the locally saved access token.
+---
 
-**Reading OneNote Data:**
-*   `listNotebooks`: Lists all your OneNote notebooks.
-*   `listSections`: Lists all sections in a specific notebook. (Args: `notebookId` (string))
-*   `listPagesInSection`: Lists pages in a specific section with pagination support. (Args: `sectionId` (string), `top` (number, optional, max 100), `orderBy` (enum: "created", "modified", optional))
-*   `searchPages`: Searches for pages by title across all notebooks with full pagination. (Arg: `query` (optional string))
-*   `searchPagesByDate`: Searches for pages created or modified within a date range across all notebooks and sections. (Args: `days` (number, default 1), `query` (optional keyword filter), `dateField` (enum: "created", "modified", "both"), `includeContent` (boolean, optional))
-*   `searchPageContent`: **NEW!** Searches for text within page content (not just titles). (Args: `query` (string), `days` (optional number), `notebookId` (optional), `maxPages` (default 20))
-*   `searchInNotebook`: Scoped search within a specific notebook with optional date and keyword filters. (Args: `notebookId` (string), `query` (optional string), `days` (optional number), `top` (number, max 100))
-*   `getPageContent`: Retrieves the content of a specific OneNote page. (Args: `pageId` (string), `format` (enum: "text", "html", "summary", optional, default: "text"))
-*   `getPageByTitle`: Finds a page by its title and retrieves its content. (Args: `title` (string), `format` (enum: "text", "html", "summary", optional, default: "text"))
+### Authentication Tools
 
-**Productivity Tools:**
-*   `getMyRecentChanges`: **NEW!** Shows pages YOU modified since a date - perfect for standup prep! (Args: `sinceDate` (string or "monday"), `days` (optional number), `notebookId` (optional), `includeCreator` (boolean))
-*   `createDailyNote`: **NEW!** Quickly create a daily note with auto-formatted date. (Args: `notebookName` (string), `sectionName` (string), `date` (optional, defaults to "today"), `title` (optional), `content` (optional))
+#### `authenticate`
 
-**Editing & Creating OneNote Pages:**
-*   `createPage`: Creates a new OneNote page in the first available section. (Args: `title` (string), `content` (string - HTML or markdown))
-*   `updatePageContent`: Replaces the entire content of an existing page. (Args: `pageId` (string), `content` (string), `preserveTitle` (boolean, optional, default: true))
-*   `appendToPage`: Adds new content to the end of an existing page. (Args: `pageId` (string), `content` (string), `addTimestamp` (boolean, optional, default: true), `addSeparator` (boolean, optional, default: true))
-*   `updatePageTitle`: Changes the title of an existing page. (Args: `pageId` (string), `newTitle` (string))
-*   `replaceTextInPage`: Finds and replaces text within a page. (Args: `pageId` (string), `findText` (string), `replaceText` (string), `caseSensitive` (boolean, optional, default: false))
-*   `addNoteToPage`: Adds a formatted, timestamped note/comment to a page. (Args: `pageId` (string), `note` (string), `noteType` (enum: "note", "todo", "important", "question", optional, default: "note"), `position` (enum: "top", "bottom", optional, default: "bottom"))
-*   `addTableToPage`: Adds a formatted table to a page from CSV data. (Args: `pageId` (string), `tableData` (string - CSV), `title` (string, optional), `position` (enum: "top", "bottom", optional, default: "bottom"))
+Starts the OAuth 2.0 device code flow. The server generates a one-time user code and provides a URL (`https://microsoft.com/devicelogin`). After you complete sign-in in your browser, the token is saved automatically in the background. No input parameters required.
+
+**Behavior:** The tool returns immediately with the device code instructions. Token retrieval continues asynchronously. If the browser sign-in succeeds, the token is persisted to `.access-token.txt` and the Graph client is initialized without further action.
+
+#### `saveAccessToken`
+
+Loads the persisted token from disk, verifies it against the Graph API, and displays the authenticated account name and email. Use this after `authenticate` to confirm the token was saved correctly. No input parameters required.
+
+**Behavior:** Calls the `/me` Graph endpoint to verify the token. If no token file exists, returns an error directing the user to run `authenticate` first.
+
+---
+
+### Reading Tools
+
+#### `listNotebooks`
+
+Returns all OneNote notebooks accessible to the authenticated user, including each notebook's ID, display name, creation date, and modification date.
+
+**Behavior:** Single API call to `/me/onenote/notebooks`. No pagination needed since users typically have a small number of notebooks.
+
+#### `listSections`
+
+Lists all sections within a specific notebook.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `notebookId` | string | Yes | The ID of the notebook (obtained from `listNotebooks`) |
+
+**Behavior:** Uses pagination to retrieve all sections, so it handles notebooks with many sections.
+
+#### `listPagesInSection`
+
+Lists pages within a section, sorted by date, with pagination support.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `sectionId` | string | Yes | | The section ID (from `listSections`) |
+| `top` | number | No | 20 | Pages per request (1-100) |
+| `orderBy` | enum | No | `"modified"` | Sort by `"created"` or `"modified"` date (descending) |
+
+**Behavior:** Fetches pages using the Graph API's `$top` and `$orderby` parameters. Displays up to 50 pages in the response; if more exist, a count of remaining pages is shown.
+
+#### `searchPages`
+
+Searches for pages by title across all notebooks.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | No | Substring to match against page titles (case-insensitive). If omitted, returns all pages. |
+
+**Behavior:** Fetches *all* pages via pagination, then filters client-side by title. This is necessary because the OneNote Graph API does not support `$filter` on page titles. Returns the first 10 matches. For large accounts, consider using `searchInNotebook` or `searchPagesByDate` instead to reduce API calls.
+
+**Tip:** If you have many pages and searches feel slow, use `searchInNotebook` to scope the search to a single notebook, or `searchPagesByDate` to narrow by date range.
+
+#### `searchPagesByDate`
+
+Searches across all notebooks and sections for pages created or modified within a time window. Supports keyword filtering and creator/modifier attribution filtering.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `days` | number | No | 1 | How many days back to search (1 = today only) |
+| `query` | string | No | | Keyword filter on page titles (case-insensitive) |
+| `dateField` | enum | No | `"both"` | Which date to check: `"created"`, `"modified"`, or `"both"` |
+| `includeContent` | boolean | No | `false` | Include a 200-character content preview for each match (slower, requires fetching page body) |
+| `createdBy` | string | No | | Filter by creator name or email (partial, case-insensitive) |
+| `modifiedBy` | string | No | | Filter by last modifier name or email (partial, case-insensitive) |
+
+**Behavior:** Iterates through every notebook and section, fetching pages with `$expand=lastModifiedBy,createdBy`. Filters by date threshold, then optionally by keyword and user attribution. Results are sorted by most recently modified first. Returns up to 20 matches.
+
+**Performance note:** This tool makes multiple API calls (one per section). For accounts with many notebooks/sections, it may take several seconds. Use the `notebookId`-scoped `searchInNotebook` tool when possible.
+
+#### `searchPageContent`
+
+Searches for text within the actual body content of pages, not just titles.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query` | string | Yes | | Text to search for (case-insensitive) |
+| `days` | number | No | | Limit to pages modified within the last N days |
+| `notebookId` | string | No | | Limit to a specific notebook |
+| `maxPages` | number | No | 20 | Maximum number of matching pages to return (1-50) |
+
+**Behavior:** Iterates through notebooks and sections, fetching the HTML content of each page and converting it to plain text for searching. Returns matching pages with a contextual snippet showing the search term in context.
+
+**Performance note:** This is the most expensive search tool because it must download and parse the HTML body of every candidate page. Use the `days`, `notebookId`, and `maxPages` parameters to limit the scope. The tool stops early once `maxPages` matches are found.
+
+#### `searchInNotebook`
+
+Scoped search within a single notebook. Faster than cross-notebook searches.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `notebookId` | string | Yes | | The notebook to search within |
+| `query` | string | No | | Keyword filter on page titles (case-insensitive) |
+| `days` | number | No | | Limit to pages from the last N days |
+| `top` | number | No | 100 | Max pages to fetch per section (1-100) |
+
+**Behavior:** Fetches all sections in the specified notebook, then pages within each section. Applies optional date and keyword filters. Results sorted by most recently modified. Returns up to 20 matches.
+
+#### `getPageContent`
+
+Retrieves the full content of a single page by its ID.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `pageId` | string | Yes | | The page ID (from any search or list tool) |
+| `format` | enum | No | `"text"` | Output format: `"text"` (readable plain text), `"html"` (raw HTML), or `"summary"` (first 300 characters) |
+
+**Behavior:** Fetches the page's HTML content via direct HTTP request, then converts it to the requested format. The `text` format strips HTML tags and formats headings, lists, and tables as readable plain text. The `html` format returns the raw OneNote HTML. The `summary` format extracts the first 300 characters of body text.
+
+#### `getPageByTitle`
+
+Finds a page by title and retrieves its content in one step.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `title` | string | Yes | | Full or partial page title (case-insensitive) |
+| `format` | enum | No | `"text"` | Output format: `"text"`, `"html"`, or `"summary"` |
+
+**Behavior:** Fetches the first page of results from `/me/onenote/pages`, finds the first page whose title contains the search string (case-insensitive), then fetches and returns its content. If no match is found, shows up to 10 available page titles to help the user refine their search.
+
+**Limitation:** Only searches the first page of API results (default page size). For more thorough title searching, use `searchPages` first to find the page ID, then `getPageContent`.
+
+---
+
+### Productivity Tools
+
+#### `getMyRecentChanges`
+
+Shows pages that the currently authenticated user has modified since a given date. Designed for standup preparation.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `sinceDate` | string | No | | Start date in `YYYY-MM-DD` format, or `"monday"` to use last Monday |
+| `days` | number | No | 3 | Alternative: number of days back to search |
+| `notebookId` | string | No | | Limit to a specific notebook |
+| `includeCreator` | boolean | No | `false` | Show who originally created each page |
+
+**Behavior:** Fetches the current user's email via `/me`, then iterates through all notebooks/sections looking for pages where the `lastModifiedBy` email matches. Results are grouped by notebook for easy scanning. If both `sinceDate` and `days` are provided, `sinceDate` takes precedence.
+
+**Tip:** Use `sinceDate: "monday"` at your Thursday standup to see everything you touched that week.
+
+#### `createDailyNote`
+
+Creates a new dated note in a specific notebook and section. Automatically formats the date and checks for duplicates.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `notebookName` | string | Yes | | Notebook name (case-insensitive match) |
+| `sectionName` | string | Yes | | Section name within that notebook (case-insensitive match) |
+| `date` | string | No | `"today"` | Date in `YYYY-MM-DD` format, or `"today"` |
+| `title` | string | No | | Custom title (defaults to `M/D/YY` format, e.g., `"2/20/26"`) |
+| `content` | string | No | | Initial page content (markdown or HTML). Defaults to placeholder text. |
+
+**Behavior:** Looks up the notebook and section by name (case-insensitive). If the notebook or section isn't found, returns a list of available options. Checks if a page with the same title already exists in the section; if so, returns info about the existing page instead of creating a duplicate. The page is created with the content converted from markdown to HTML.
+
+---
+
+### Editing & Creating Tools
+
+#### `createPage`
+
+Creates a new page in the first available section across all notebooks.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `title` | string | Yes | Page title (cannot be empty) |
+| `content` | string | Yes | Page content in markdown or HTML (cannot be empty) |
+
+**Behavior:** Fetches all sections via `/me/onenote/sections` and uses the first one found. Content is converted from markdown to HTML. The title is HTML-escaped for safe insertion. Returns the created page's ID, title, section name, and creation timestamp.
+
+**Note:** If you need to target a specific notebook and section, use `createDailyNote` instead (it accepts notebook/section names).
+
+#### `updatePageContent`
+
+Replaces the entire body content of an existing page.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `pageId` | string | Yes | | The page to update |
+| `content` | string | Yes | | New content (markdown or HTML) |
+| `preserveTitle` | boolean | No | `true` | Keep the original title as an `<h1>` at the top |
+
+**Behavior:** Fetches the current page metadata, converts the new content to HTML, and sends a PATCH request with `action: "replace"` targeting the body. A timestamp footer is appended. This is a destructive operation that replaces all existing body content.
+
+#### `appendToPage`
+
+Adds content to the end of an existing page without affecting existing content.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `pageId` | string | Yes | | The page to append to |
+| `content` | string | Yes | | Content to add (markdown or HTML) |
+| `addTimestamp` | boolean | No | `true` | Prepend a timestamp above the new content |
+| `addSeparator` | boolean | No | `true` | Add a horizontal rule before the new content |
+
+**Behavior:** Converts content to HTML and sends a PATCH request with `action: "append"` targeting the body. The separator and timestamp appear above the new content to visually distinguish additions.
+
+#### `updatePageTitle`
+
+Changes the title of an existing page.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `pageId` | string | Yes | The page to rename |
+| `newTitle` | string | Yes | The new title |
+
+**Behavior:** Sends a PATCH request with `action: "replace"` targeting the `title`. The old title is displayed in the confirmation message.
+
+#### `replaceTextInPage`
+
+Finds and replaces text within a page's HTML content.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `pageId` | string | Yes | | The page to modify |
+| `findText` | string | Yes | | Text to search for |
+| `replaceText` | string | Yes | | Replacement text |
+| `caseSensitive` | boolean | No | `false` | Whether to match case exactly |
+
+**Behavior:** Fetches the page's raw HTML content, builds a regex from the search text (special regex characters are escaped automatically), and performs a global replace. Reports the number of occurrences found and replaced. If no matches are found, no changes are made.
+
+**Important:** The find-and-replace operates on the raw HTML. This means it can match text inside HTML tags or attributes. For most plain-text replacements this works as expected, but be cautious with strings that might appear in HTML markup.
+
+#### `addNoteToPage`
+
+Adds a formatted, color-coded callout block to a page.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `pageId` | string | Yes | | The page to add the note to |
+| `note` | string | Yes | | The note content (markdown or HTML) |
+| `noteType` | enum | No | `"note"` | Visual style: `"note"` (blue), `"todo"` (green), `"important"` (red), `"question"` (orange) |
+| `position` | enum | No | `"bottom"` | Where to insert: `"top"` or `"bottom"` |
+
+**Behavior:** Creates a styled `<div>` block with a colored left border, background color, icon, type label, and timestamp. The note content is converted from markdown to HTML. Sent as a PATCH with `action: "prepend"` or `"append"` depending on position.
+
+#### `addTableToPage`
+
+Inserts a formatted HTML table from CSV data.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `pageId` | string | Yes | | The page to add the table to |
+| `tableData` | string | Yes | | Table in CSV format: first line is headers, subsequent lines are data rows. Columns separated by commas. |
+| `title` | string | No | | Optional heading above the table |
+| `position` | enum | No | `"bottom"` | Where to insert: `"top"` or `"bottom"` |
+
+**Behavior:** Parses the CSV string by splitting on newlines (rows) and commas (columns). Requires at least two rows (one header + one data row). All cell values are HTML-escaped. The table is rendered with borders and padding.
+
+**Example `tableData` input:**
+```
+Task,Status,Owner
+Design review,Done,Alice
+Backend API,In Progress,Bob
+```
 
 ## Example Interactions with AI
 
