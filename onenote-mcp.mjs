@@ -362,14 +362,45 @@ server.tool(
 );
 
 server.tool(
-  'searchPages',
+  'listSections',
   {
-    query: z.string().describe('The search term for page titles.').optional()
+    // No input parameters
   },
-  async ({ query }) => {
+  async () => {
     try {
       await ensureGraphClient();
-      const apiResponse = await graphClient.api('/me/onenote/pages').get();
+      const response = await graphClient.api('/me/onenote/sections').get();
+      if (response.value && response.value.length > 0) {
+        const sectionList = response.value.map((section, i) => formatPageInfo(section, i)).join('\n\n');
+        return { content: [{ type: 'text', text: `🗂️ **Your OneNote Sections** (${response.value.length} found):\n\n${sectionList}` }] };
+      } else {
+        return { content: [{ type: 'text', text: '🗂️ No OneNote sections found.' }] };
+      }
+    } catch (error) {
+      return { isError: true, content: [{ type: 'text', text: error.message.includes('authenticate') ? '🔐 Authentication Required. Run `authenticate` tool.' : `Failed to list sections: ${error.message}` }] };
+    }
+  }
+);
+
+server.tool(
+  'searchPages',
+  {
+    query: z.string().describe('The search term for page titles.').optional(),
+    sectionId: z.string().describe('Optional: The ID of the section to search within. If not provided, searches all sections.').optional()
+  },
+  async ({ query, sectionId }) => {
+    try {
+      await ensureGraphClient();
+      let apiEndpoint = '/me/onenote/pages';
+      let searchContext = 'all sections';
+
+      if (sectionId) {
+        apiEndpoint = `/me/onenote/sections/${sectionId}/pages`;
+        const sectionInfo = await graphClient.api(`/me/onenote/sections/${sectionId}`).get();
+        searchContext = `section "${sectionInfo.displayName}"`;
+      }
+
+      const apiResponse = await graphClient.api(apiEndpoint).get();
       let pages = apiResponse.value || [];
       if (query) {
         const searchTerm = query.toLowerCase();
@@ -378,9 +409,9 @@ server.tool(
       if (pages.length > 0) {
         const pageList = pages.slice(0, 10).map((page, i) => formatPageInfo(page, i)).join('\n\n');
         const morePages = pages.length > 10 ? `\n\n... and ${pages.length - 10} more pages.` : '';
-        return { content: [{ type: 'text', text: `🔍 **Search Results** ${query ? `for "${query}"` : ''} (${pages.length} found):\n\n${pageList}${morePages}` }] };
+        return { content: [{ type: 'text', text: `🔍 **Search Results** ${query ? `for "${query}"` : ''} in ${searchContext} (${pages.length} found):\n\n${pageList}${morePages}` }] };
       } else {
-        return { content: [{ type: 'text', text: query ? `🔍 No pages found matching "${query}".` : '📄 No pages found.' }] };
+        return { content: [{ type: 'text', text: query ? `🔍 No pages found matching "${query}" in ${searchContext}.` : `📄 No pages found in ${searchContext}.` }] };
       }
     } catch (error) {
       return { isError: true, content: [{ type: 'text', text: `Failed to search pages: ${error.message}` }] };
@@ -774,7 +805,7 @@ async function main() {
     console.error('   Ready to manage your OneNote like never before!');
     console.error('--- Available Tool Categories ---');
     console.error('   🔐 Auth: authenticate, saveAccessToken');
-    console.error('   📚 Read: listNotebooks, searchPages, getPageContent, getPageByTitle');
+    console.error('   📚 Read: listNotebooks, listSections, searchPages, getPageContent, getPageByTitle');
     console.error('   ✏️ Edit: updatePageContent, appendToPage, updatePageTitle, replaceTextInPage, addNoteToPage, addTableToPage');
     console.error('   ➕ Create: createPage');
     console.error('---------------------------------');
